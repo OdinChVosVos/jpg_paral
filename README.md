@@ -1,3 +1,14 @@
+## Лицензии
+
+Данный проект использует следующие библиотеки с открытым кодом:
+
+### pybind11
+Python биндинги реализованы с использованием pybind11.
+- Лицензия: BSD-3-Clause
+- Copyright (c) 2016 Wenzel Jakob
+- Полный текст лицензии: [LICENSE_PYBIND11](LICENSE_PYBIND11)
+- Репозиторий: https://github.com/pybind/pybind11
+
 ## Описание кода
 
 ### CMakeLists.txt
