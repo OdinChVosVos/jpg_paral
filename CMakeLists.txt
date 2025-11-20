@@ -7,11 +7,15 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -fopenmp")
 
 find_package(OpenMP REQUIRED)
 
+add_subdirectory(pybind11)
+
 add_library(jpeg_lib STATIC
     src/dct.cpp
     src/quantization.cpp
     src/jpeg_encoder.cpp
 )
+
+set_target_properties(jpeg_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_include_directories(jpeg_lib PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -19,5 +23,5 @@ target_include_directories(jpeg_lib PUBLIC
 
 target_link_libraries(jpeg_lib PUBLIC OpenMP::OpenMP_CXX)
 
-add_executable(jpeg_test test/test_encoder.cpp)
-target_link_libraries(jpeg_test PRIVATE jpeg_lib)
+pybind11_add_module(jpeg_py src/python_bindings.cpp)
+target_link_libraries(jpeg_py PRIVATE jpeg_lib)
