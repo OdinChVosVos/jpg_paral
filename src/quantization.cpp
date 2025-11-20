@@ -1,5 +1,6 @@
 #include "quantization.h"
 #include <algorithm>
+#include <cmath>
 
 const int Quantization::LUMINANCE_QUANT_TABLE[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE] = {
     {16, 11, 10, 16,  24,  40,  51,  61},
@@ -30,17 +31,18 @@ void Quantization::scale_quantization_table(
     
     quality = std::clamp(quality, 1, 100);
     
-    int scale_factor;
+    double scale;
+    
     if (quality < 50) {
-        scale_factor = 5000 / quality;
+        scale = 5000.0 / quality;
     } else {
-        scale_factor = 200 - quality * 2;
+        scale = 200.0 - quality * 2.0;
     }
     
     for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
         for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
-            int temp = (input[i][j] * scale_factor + 50) / 100;
-            output[i][j] = std::clamp(temp, 1, 255);
+            double temp = (input[i][j] * scale + 50.0) / 100.0;
+            output[i][j] = std::clamp(static_cast<int>(std::floor(temp + 0.5)), 1, 255);
         }
     }
 }
