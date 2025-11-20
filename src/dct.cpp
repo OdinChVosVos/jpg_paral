@@ -46,7 +46,7 @@ void DCT::forward_dct_optimized(const double input[BLOCK_SIZE][BLOCK_SIZE],
                 }
             }
             
-            output[u][v] = 0.25 * C(u) * C(v) * sum;
+            output[u][v] = 0.25 * DCT::C(u) * DCT::C(v) * sum;
         }
     }
 }
