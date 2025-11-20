@@ -1,3 +1,45 @@
-build
-.vscode
+# Build директория
+build/
+build_win/
+*.o
+*.a
+*.so
+*.pyd
+
+# Python compiled
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+
+# Внешние зависимости
+pybind11/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Python virtual environment
+venv/
+env/
 .env
+
+# Скомпилированный Python модуль в корне
+jpeg_py*.so
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
