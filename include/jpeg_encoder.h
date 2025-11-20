@@ -15,6 +15,9 @@ struct Image {
 struct EncodedData {
     std::vector<uint8_t> data;
     size_t size;
+    int zero_coefficients;
+    int total_coefficients;
+    size_t uncompressed_size;  // Новое поле
 };
 
 class JPEGEncoder {
@@ -46,9 +49,22 @@ private:
                                  int width, int height,
                                  bool is_luminance);
     
+    void decode_channel_parallel(const std::vector<int>& quantized,
+                                std::vector<double>& channel,
+                                int width, int height,
+                                bool is_luminance);
+    
     void process_block(const double* block_data,
                       int* output,
                       bool is_luminance);
+    
+    void process_block_decode(const int* input,
+                             double* output,
+                             bool is_luminance);
+    
+    // RLE энтропийное кодирование
+    std::vector<uint8_t> rle_encode(const std::vector<int>& data);
+    std::vector<int> rle_decode(const uint8_t* data, size_t& offset, size_t target_size);
 };
 
 #endif
