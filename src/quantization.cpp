@@ -46,31 +46,3 @@ void Quantization::scale_quantization_table(
         }
     }
 }
-
-void Quantization::quantize(const double input[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE],
-                           int output[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE],
-                           const int quant_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE],
-                           int quality) {
-    int scaled_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
-    scale_quantization_table(quant_table, scaled_table, quality);
-    
-    for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
-        for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
-            output[i][j] = static_cast<int>(std::round(input[i][j] / scaled_table[i][j]));
-        }
-    }
-}
-
-void Quantization::dequantize(const int input[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE],
-                             double output[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE],
-                             const int quant_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE],
-                             int quality) {
-    int scaled_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
-    scale_quantization_table(quant_table, scaled_table, quality);
-    
-    for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
-        for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
-            output[i][j] = input[i][j] * scaled_table[i][j];
-        }
-    }
-}

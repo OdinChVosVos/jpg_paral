@@ -5,7 +5,7 @@
 #include <cstring>
 #include <algorithm>
 #include <iostream>
-#include <iomanip>
+#include <cmath>
 
 JPEGEncoder::JPEGEncoder(int quality, int num_threads)
     : quality_(quality), num_threads_(num_threads) {
@@ -69,65 +69,11 @@ void JPEGEncoder::ycbcr_to_rgb(const std::vector<double>& y,
     }
 }
 
-void JPEGEncoder::process_block(const double* block_data,
-                                int* output,
-                                bool is_luminance) {
-    double input_block[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
-    double dct_output[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
-    int quantized[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
-    
-    for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
-        for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
-            input_block[i][j] = block_data[i * DCT::BLOCK_SIZE + j] - 128.0;
-        }
-    }
-    
-    DCT::forward_dct_optimized(input_block, dct_output);
-    
-    const int (*quant_table)[DCT::BLOCK_SIZE] = is_luminance 
-        ? Quantization::LUMINANCE_QUANT_TABLE
-        : Quantization::CHROMINANCE_QUANT_TABLE;
-    
-    Quantization::quantize(dct_output, quantized, quant_table, quality_);
-    
-    for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
-        for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
-            output[i * DCT::BLOCK_SIZE + j] = quantized[i][j];
-        }
-    }
-}
-
-void JPEGEncoder::process_block_decode(const int* input,
-                                       double* output,
-                                       bool is_luminance) {
-    int quantized[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
-    double dequantized[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
-    double idct_output[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
-    
-    for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
-        for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
-            quantized[i][j] = input[i * DCT::BLOCK_SIZE + j];
-        }
-    }
-    
-    const int (*quant_table)[DCT::BLOCK_SIZE] = is_luminance 
-        ? Quantization::LUMINANCE_QUANT_TABLE
-        : Quantization::CHROMINANCE_QUANT_TABLE;
-    
-    Quantization::dequantize(quantized, dequantized, quant_table, quality_);
-    DCT::inverse_dct(dequantized, idct_output);
-    
-    for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
-        for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
-            output[i * DCT::BLOCK_SIZE + j] = idct_output[i][j] + 128.0;
-        }
-    }
-}
-
+// Оптимизированная функция обработки канала
 void JPEGEncoder::process_channel_parallel(const std::vector<double>& channel,
                                           std::vector<int>& quantized,
                                           int width, int height,
-                                          bool is_luminance) {
+                                          const int quant_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE]) {
     int blocks_x = (width + DCT::BLOCK_SIZE - 1) / DCT::BLOCK_SIZE;
     int blocks_y = (height + DCT::BLOCK_SIZE - 1) / DCT::BLOCK_SIZE;
     int total_blocks = blocks_x * blocks_y;
@@ -136,54 +82,80 @@ void JPEGEncoder::process_channel_parallel(const std::vector<double>& channel,
     
     #pragma omp parallel for schedule(static)
     for (int block_idx = 0; block_idx < total_blocks; ++block_idx) {
+        double block_data[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
+        double dct_output[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
+        
         int block_y = block_idx / blocks_x;
         int block_x = block_idx % blocks_x;
+        int base_y = block_y * DCT::BLOCK_SIZE;
+        int base_x = block_x * DCT::BLOCK_SIZE;
         
-        double block_data[DCT::BLOCK_SIZE * DCT::BLOCK_SIZE];
-        std::fill(block_data, block_data + DCT::BLOCK_SIZE * DCT::BLOCK_SIZE, 128.0);
-        
+        // Заполнение блока и сдвиг уровня (-128)
         for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
             for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
-                int y = block_y * DCT::BLOCK_SIZE + i;
-                int x = block_x * DCT::BLOCK_SIZE + j;
-                
-                if (y < height && x < width) {
-                    block_data[i * DCT::BLOCK_SIZE + j] = channel[y * width + x];
-                }
+                int y = base_y + i;
+                int x = base_x + j;
+                double val = (y < height && x < width) ? channel[y * width + x] : 128.0;
+                block_data[i][j] = val - 128.0;
             }
         }
         
-        int* output_ptr = &quantized[block_idx * DCT::BLOCK_SIZE * DCT::BLOCK_SIZE];
-        process_block(block_data, output_ptr, is_luminance);
+        DCT::forward_dct_optimized(block_data, dct_output);
+        
+        // Квантование (используя предвычисленную таблицу)
+        int* out_ptr = &quantized[block_idx * 64];
+        for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
+            for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
+                out_ptr[i * 8 + j] = static_cast<int>(std::round(dct_output[i][j] / quant_table[i][j]));
+            }
+        }
     }
 }
 
 void JPEGEncoder::decode_channel_parallel(const std::vector<int>& quantized,
                                          std::vector<double>& channel,
                                          int width, int height,
-                                         bool is_luminance) {
+                                         const int quant_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE]) {
     int blocks_x = (width + DCT::BLOCK_SIZE - 1) / DCT::BLOCK_SIZE;
     int blocks_y = (height + DCT::BLOCK_SIZE - 1) / DCT::BLOCK_SIZE;
     int total_blocks = blocks_x * blocks_y;
     
-    channel.resize(width * height, 128.0);
+    channel.resize(width * height);
     
     #pragma omp parallel for schedule(static)
     for (int block_idx = 0; block_idx < total_blocks; ++block_idx) {
+        int quantized_block[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
+        double dequantized[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
+        double idct_output[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
+        
         int block_y = block_idx / blocks_x;
         int block_x = block_idx % blocks_x;
         
-        double block_data[DCT::BLOCK_SIZE * DCT::BLOCK_SIZE];
-        const int* input_ptr = &quantized[block_idx * DCT::BLOCK_SIZE * DCT::BLOCK_SIZE];
-        process_block_decode(input_ptr, block_data, is_luminance);
+        const int* input_ptr = &quantized[block_idx * 64];
         
+        // Копирование во временный буфер
+        for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
+            for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
+                quantized_block[i][j] = input_ptr[i * 8 + j];
+            }
+        }
+        
+        // Деквантование
+        for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
+            for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
+                dequantized[i][j] = quantized_block[i][j] * quant_table[i][j];
+            }
+        }
+        
+        DCT::inverse_dct(dequantized, idct_output);
+        
+        // Запись в канал
         for (int i = 0; i < DCT::BLOCK_SIZE; ++i) {
             for (int j = 0; j < DCT::BLOCK_SIZE; ++j) {
                 int y = block_y * DCT::BLOCK_SIZE + i;
                 int x = block_x * DCT::BLOCK_SIZE + j;
-                
                 if (y < height && x < width) {
-                    channel[y * width + x] = block_data[i * DCT::BLOCK_SIZE + j];
+                    channel[y * width + x] = idct_output[i][j] + 128.0;
                 }
             }
         }
@@ -199,9 +171,7 @@ std::vector<uint8_t> JPEGEncoder::rle_encode(const std::vector<int>& data) {
         int value = data[i];
         size_t count = 1;
         
-        while (i + count < data.size() && 
-               data[i + count] == value && 
-               count < 255) {
+        while (i + count < data.size() && data[i + count] == value && count < 255) {
             count++;
         }
         
@@ -215,7 +185,6 @@ std::vector<uint8_t> JPEGEncoder::rle_encode(const std::vector<int>& data) {
         
         i += count;
     }
-    
     return encoded;
 }
 
@@ -238,7 +207,6 @@ std::vector<int> JPEGEncoder::rle_decode(const uint8_t* data, size_t& offset, si
             decoded.push_back(value);
         }
     }
-    
     return decoded;
 }
 
@@ -248,14 +216,22 @@ EncodedData JPEGEncoder::encode(const Image& image) {
     
     auto start_time = omp_get_wtime();
     
+    // 1. Подготовка таблиц квантования (один раз)
+    int luma_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
+    int chroma_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
+    Quantization::scale_quantization_table(Quantization::LUMINANCE_QUANT_TABLE, luma_table, quality_);
+    Quantization::scale_quantization_table(Quantization::CHROMINANCE_QUANT_TABLE, chroma_table, quality_);
+    
+    // 2. Конвертация цвета
     std::vector<double> y, cb, cr;
     rgb_to_ycbcr(image, y, cb, cr);
     
     std::vector<int> y_quantized, cb_quantized, cr_quantized;
     
-    process_channel_parallel(y, y_quantized, image.width, image.height, true);
-    process_channel_parallel(cb, cb_quantized, image.width, image.height, false);
-    process_channel_parallel(cr, cr_quantized, image.width, image.height, false);
+    // 3. Обработка каналов (параллельно внутри функций)
+    process_channel_parallel(y, y_quantized, image.width, image.height, luma_table);
+    process_channel_parallel(cb, cb_quantized, image.width, image.height, chroma_table);
+    process_channel_parallel(cr, cr_quantized, image.width, image.height, chroma_table);
     
     int total_coeffs = y_quantized.size() + cb_quantized.size() + cr_quantized.size();
     int zero_coeffs = 0;
@@ -263,16 +239,14 @@ EncodedData JPEGEncoder::encode(const Image& image) {
     for (int val : cb_quantized) if (val == 0) zero_coeffs++;
     for (int val : cr_quantized) if (val == 0) zero_coeffs++;
     
+    // 4. RLE сжатие (параллельно по каналам)
     std::vector<uint8_t> y_rle, cb_rle, cr_rle;
-    
     #pragma omp parallel sections
     {
         #pragma omp section
         y_rle = rle_encode(y_quantized);
-        
         #pragma omp section
         cb_rle = rle_encode(cb_quantized);
-        
         #pragma omp section
         cr_rle = rle_encode(cr_quantized);
     }
@@ -349,6 +323,13 @@ Image JPEGEncoder::decode(const EncodedData& encoded) {
     std::memcpy(&cr_count, &encoded.data[idx], sizeof(int)); idx += sizeof(int);
     
     size_t offset = idx;
+    
+    // Подготовка таблиц декодирования
+    int luma_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
+    int chroma_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE];
+    Quantization::scale_quantization_table(Quantization::LUMINANCE_QUANT_TABLE, luma_table, saved_quality);
+    Quantization::scale_quantization_table(Quantization::CHROMINANCE_QUANT_TABLE, chroma_table, saved_quality);
+    
     std::vector<int> y_quantized, cb_quantized, cr_quantized;
     
     #pragma omp parallel sections
@@ -358,13 +339,11 @@ Image JPEGEncoder::decode(const EncodedData& encoded) {
             size_t local_offset = offset;
             y_quantized = rle_decode(encoded.data.data(), local_offset, y_count);
         }
-        
         #pragma omp section
         {
             size_t local_offset = offset + y_size;
             cb_quantized = rle_decode(encoded.data.data(), local_offset, cb_count);
         }
-        
         #pragma omp section
         {
             size_t local_offset = offset + y_size + cb_size;
@@ -372,16 +351,10 @@ Image JPEGEncoder::decode(const EncodedData& encoded) {
         }
     }
     
-    int temp_quality = quality_;
-    quality_ = saved_quality;
-    
     std::vector<double> y, cb, cr;
-    
-    decode_channel_parallel(y_quantized, y, result.width, result.height, true);
-    decode_channel_parallel(cb_quantized, cb, result.width, result.height, false);
-    decode_channel_parallel(cr_quantized, cr, result.width, result.height, false);
-    
-    quality_ = temp_quality;
+    decode_channel_parallel(y_quantized, y, result.width, result.height, luma_table);
+    decode_channel_parallel(cb_quantized, cb, result.width, result.height, chroma_table);
+    decode_channel_parallel(cr_quantized, cr, result.width, result.height, chroma_table);
     
     result.channels = 3;
     result.data.resize(result.width * result.height * 3);

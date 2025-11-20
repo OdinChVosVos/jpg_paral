@@ -1,6 +1,7 @@
 #ifndef JPEG_ENCODER_H
 #define JPEG_ENCODER_H
 
+#include "dct.h" // Для BLOCK_SIZE
 #include <vector>
 #include <cstdint>
 #include <string>
@@ -17,7 +18,7 @@ struct EncodedData {
     size_t size;
     int zero_coefficients;
     int total_coefficients;
-    size_t uncompressed_size;  // Новое поле
+    size_t uncompressed_size;
 };
 
 class JPEGEncoder {
@@ -44,25 +45,17 @@ private:
                      const std::vector<double>& cr,
                      Image& image);
     
+    // Упрощенные функции принимают готовую таблицу квантования
     void process_channel_parallel(const std::vector<double>& channel,
                                  std::vector<int>& quantized,
                                  int width, int height,
-                                 bool is_luminance);
+                                 const int quant_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE]);
     
     void decode_channel_parallel(const std::vector<int>& quantized,
                                 std::vector<double>& channel,
                                 int width, int height,
-                                bool is_luminance);
+                                const int quant_table[DCT::BLOCK_SIZE][DCT::BLOCK_SIZE]);
     
-    void process_block(const double* block_data,
-                      int* output,
-                      bool is_luminance);
-    
-    void process_block_decode(const int* input,
-                             double* output,
-                             bool is_luminance);
-    
-    // RLE энтропийное кодирование
     std::vector<uint8_t> rle_encode(const std::vector<int>& data);
     std::vector<int> rle_decode(const uint8_t* data, size_t& offset, size_t target_size);
 };
