@@ -10,7 +10,6 @@ find_package(OpenMP REQUIRED)
 add_library(jpeg_lib STATIC
     src/dct.cpp
     src/quantization.cpp
-    src/huffman.cpp
     src/jpeg_encoder.cpp
 )
 
