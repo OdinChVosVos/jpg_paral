@@ -14,11 +14,6 @@ PYBIND11_MODULE(jpeg_py, m) {
         .def_readwrite("height", &Image::height)
         .def_readwrite("channels", &Image::channels);
 
-    py::class_<EncodedData>(m, "EncodedData")
-        .def(py::init<>())
-        .def_readwrite("data", &EncodedData::data)
-        .def_readwrite("size", &EncodedData::size);
-
     py::class_<JPEGEncoder>(m, "JPEGEncoder")
         .def(py::init<int, int>(), 
              py::arg("quality") = 85, 
@@ -27,4 +22,13 @@ PYBIND11_MODULE(jpeg_py, m) {
         .def("decode", &JPEGEncoder::decode)
         .def("set_quality", &JPEGEncoder::set_quality)
         .def("set_threads", &JPEGEncoder::set_threads);
+
+    py::class_<EncodedData>(m, "EncodedData")
+    .def(py::init<>())
+    .def_readwrite("data", &EncodedData::data)
+    .def_readwrite("size", &EncodedData::size)
+    .def_readwrite("zero_coefficients", &EncodedData::zero_coefficients)
+    .def_readwrite("total_coefficients", &EncodedData::total_coefficients)
+    .def_readwrite("uncompressed_size", &EncodedData::uncompressed_size);
+
 }
